@@ -1,0 +1,22 @@
+# binaries
+/harness
+/cmd/harness/harness
+/bin/
+*.exe
+*.test
+*.out
+coverage.*
+# env / secrets — NEVER commit real keys
+.env
+.env.*
+!.env.example
+# scratch
+.DS_Store
+.oc-logs/
+# local-only: extraction-process notes and narrative docs (never pushed)
+/AGENTS.md
+/docs/
+/context/
+# local-only: agent-editing dev hooks (not product)
+/scripts/hook-postwrite.sh
+/scripts/hook-stop.sh

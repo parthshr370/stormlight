@@ -1,0 +1,83 @@
+package openai
+
+import (
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
+	"go.harness.dev/harness/internal/engine/estimate"
+	"go.harness.dev/harness/internal/engine/types"
+)
+
+// Options configures an OpenAI stream request, embedding the shared StreamOptions.
+// ToolChoice is the OpenAI tool_choice value (nil, "auto", "none", or a forced
+// tool); ReasoningEffort maps to the reasoning_effort request field.
+type Options struct {
+	types.StreamOptions
+	ToolChoice      any
+	ReasoningEffort string
+}
+
+const (
+	contextSafetyTokens  = 4096
+	minMaxTokens         = 1
+	defaultOpenAIBaseURL = "https://api.openai.com/v1"
+)
+
+// StreamIdleTimeoutFromEnv returns the stream idle timeout from
+// HARNESS_STREAM_IDLE_SECONDS, defaulting to 90 seconds when unset or invalid.
+func StreamIdleTimeoutFromEnv() time.Duration {
+	if v := strings.TrimSpace(os.Getenv("HARNESS_STREAM_IDLE_SECONDS")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return time.Duration(n) * time.Second
+		}
+	}
+	return 90 * time.Second
+}
+
+var streamIdleTimeout = StreamIdleTimeoutFromEnv()
+
+// clampMaxTokensToContext lowers maxTokens so it fits within the model's context
+// window after the estimated prompt and a safety margin, never below minMaxTokens.
+func clampMaxTokensToContext(model types.Model, c types.Context, maxTokens int) int {
+	if model.ContextWindow <= 0 {
+		return maxInt(minMaxTokens, maxTokens)
+	}
+	available := model.ContextWindow - estimate.EstimateContextTokens(c).Tokens - contextSafetyTokens
+	return minInt(maxTokens, maxInt(minMaxTokens, available))
+}
+
+// buildBaseOptions derives StreamOptions from the simple options, clamping max
+// tokens to the context window and applying apiKey when provided.
+func buildBaseOptions(model types.Model, c types.Context, opts *types.SimpleStreamOptions, apiKey string) types.StreamOptions {
+	var base types.StreamOptions
+	if opts != nil {
+		base = opts.StreamOptions
+	}
+	requestedMaxTokens := model.MaxTokens
+	if opts != nil && opts.MaxTokens != 0 {
+		requestedMaxTokens = opts.MaxTokens
+	}
+	base.MaxTokens = clampMaxTokensToContext(model, c, requestedMaxTokens)
+	if apiKey != "" {
+		base.APIKey = apiKey
+	}
+	return base
+}
+
+func boolPtr(v bool) *bool { return &v }
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
